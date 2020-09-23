@@ -40,18 +40,21 @@ class dataNode(object):
         self.currentFeature = currentFeature
         self.data = data
 
+    def getData(self):
+        return self.data
+
     def getFeatures(self):
         return self.features
 
     def setFeature(self, feature):
-        self.feature = feature
+        self.currentFeature = feature
 
     def getExamplesWithValue(self, attribute, value):
-        list = []
+        group = np.empty((0, 0), float)
         for i in self.data[:, attribute]:
             if i == value:
-                list.append(self.data[i, :])
-        return list
+                group = np.append(group, np.array([self.data[:, attribute]]), 0)
+        return group
 
 
 def GetEntropy(examples, class_label):
@@ -87,30 +90,28 @@ def GetBestInfoGain(examples, target, attributes):
         binThree = np.empty((0, 3), float)
         for i in range(examples.shape[0]):
             if examples[i, attribute] == 0:
-                binOne = np.append(binOne, np.array([examples[i, :]]), 0)
+                binOne = np.append(binOne, np.array([examples[i, :3]]), 0)
             if examples[i, attribute] == 1:
-                binTwo = np.append(binTwo, np.array([examples[i, :]]), 0)
+                binTwo = np.append(binTwo, np.array([examples[i, :3]]), 0)
             if examples[i, attribute] == 2:
-                binThree = np.append(binThree, np.array([examples[i, :]]), 0)
+                binThree = np.append(binThree, np.array([examples[i, :3]]), 0)
         a = GetEntropy(binOne, 2)
         b = GetEntropy(binTwo, 2)
         c = GetEntropy(binThree, 2)
         #attribute_entropys = np.append(attribute_entropys, np.array([[attribute, entropy - ((a * len(binOne)/total) + (b * len(binTwo)/total) + (c * len(binThree)/total))]]), 0)
         attribute_entropys[attribute] = entropy - ((a * len(binOne)/total) + (b * len(binTwo)/total) + (c * len(binThree)/total))
-    print(attribute_entropys)
-    maximum = max(attribute_entropys, key=attribute_entropys.get)
-    return np.max(attribute_entropys)
+    return max(attribute_entropys, key=attribute_entropys.get)
 
 
 def AllNegative(examples, label):
-    for i in examples[:, 2]:
+    for i in examples[:, label]:
         if i == 1:
             return False
     return True
 
 
 def AllPositive(examples, label):
-    for i in examples[:, 2]:
+    for i in examples[:, label]:
         if i == 0:
             return False
     return True
@@ -127,21 +128,20 @@ def MostCommonValue(examples, label):
 
 def Id3(data, label, attributes):
     distance = 0
-    if AllNegative():
+    if AllNegative(data, label):
         return Node(data, 0, None)
-    if AllPositive():
+    if AllPositive(data, label):
         return Node(data, 1, None)
     if len(attributes) == 0:
         return Node(data, MostCommonValue(), None)
-    A = None  # MAKE THIS THE BEST ATTRIBUTE
+    A = GetBestInfoGain(data, label, attributes)
     # set current feature to A
-    newData = data
-    newData.setFeature(A)
-    root = Node(newData, label, distance)
+    root = Node(dataNode(attributes, A, data), label, distance)
     for x in range(3):
-        childData = data.getExamplesWithValue(A, x)
+        childData = root.data.getExamplesWithValue(A, x)
         if len(childData) == 0:
-            return
+            targetValue = MostCommonValue(childData, label)
+            return Node(data, targetValue, None)
 
     # For every choice in the attribute
     # If choice == empty then add a child leaf with label = most common target value
@@ -158,4 +158,6 @@ entropy_ = GetEntropy(rawData, target_)
 attributes_ = [0, 1]
 IG = GetBestInfoGain(rawData, target_, attributes_)
 #print(IG)
+#print(AllPositive(rawData, 4))
+print(Id3(rawData, target_, attributes_))
 
