@@ -2,59 +2,61 @@ import numpy as np
 import math
 
 
-# This ID3 algorithm is built to work on any data set with a boolean target attribute
-
-# BINS = np.array([0,1,2])
-#
-# rawData = np.genfromtxt("data/synthetic-1.csv", delimiter=",", dtype=float)
-# print(rawData.shape)
-# print(np.amin(rawData, axis=0))
-# print(np.amax(rawData, axis=0))
-#
-# bins = np.linspace(-3.0, 13.0, 3) #Creates 3 bins equal size from -3 to 13 (min and max values I found)
-#
-# binIndexOne = np.digitize(rawData[:, 0], bins) # Descretize attribute 1 to bins
-# binIndexTwo = np.digitize(rawData[:, 1], bins) # Descretize attribute 2 to bins
-#
-# cleanData = np.array([binIndexOne, binIndexTwo, rawData[:, 2]]).transpose() #Creates a 2D array with the attributes seperated by bins
-#
-# print(cleanData)
-# rawData = np.genfromtxt("Example.csv", delimiter=",", dtype=float)
-
-
-class Node(object):  # Set parent to None if Root.
-    def __init__(self, data, label, distance):
-        self.data = data
+class Node(object):
+    def __init__(self, feature, target, label, children, data):
+        self.feature = feature
         self.label = label
-        self.distance = distance
-        self.children = None
-
-    def add_child(self, child):
-        np.append(self.children, child)
-
-
-# feature is a dict key:pair feature:value
-class dataNode(object):
-    def __init__(self, features, currentFeature, data):
-        self.features = features
-        self.currentFeature = currentFeature
+        self.target = target
+        self.children = children
         self.data = data
 
-    def getData(self):
-        return self.data
+    def setFeature(self, feature, value):
+        self.feature = (feature, value)
 
-    def getFeatures(self):
-        return self.features
+    def addChildren(self, children):
+        self.children = children
 
-    def setFeature(self, feature):
-        self.currentFeature = feature
+    def findSuccessRate(self):
+        correct = 0
+        total = 0
+        if len(self.data[:, self.label]) == 0 or self.target is not None:
+            for i in self.data[:, self.label]:
+                total += 1
+                if i == self.target:
+                    correct += 1
+        if self.children is not None:
+            for child in self.children:
+                tempC, tempT = child.findSuccessRate()
+                correct += tempC
+                total += tempT
+        return correct, total
 
-    def getExamplesWithValue(self, attribute, value):
-        group = np.empty((0, 0), float)
-        for i in self.data[:, attribute]:
-            if i == value:
-                group = np.append(group, np.array([self.data[:, attribute]]), 0)
-        return group
+    def print_tree(self, distance):
+        if distance == 0:
+            print("---------------------")
+            print("ROOT OF TREE")
+            correct, total = self.findSuccessRate()
+            print("TOTAL SUCCESS RATE: " + str(correct) + "/" + str(total) + " = " + str(correct/total))
+        else:
+            correct, total = self.findSuccessRate()
+            if total == 0:
+                print("0 Nodes in sub tree")
+            else:
+                print("Success rate of sub tree: " + str(correct) + "/" + str(total) + " = " + str(correct/total))
+        print("---------------------")
+        print("Parent, distance: " + str(distance))
+        if self.label is not None:
+            print("Feature: " + str(self.feature))
+            print("Label: " + str(self.label))
+            print("Children:")
+        if self.children is not None:
+            index = 0
+            for child in self.children:
+                print("  - Child " + str(index)
+                      + ", Feature: " + str(child.feature) + ", Label: " + str(child.label))
+            for child in self.children:
+                print(child.print_tree(distance + 1))
+                
 
 
 def GetEntropy(examples, class_label):
@@ -80,7 +82,6 @@ def GetEntropy(examples, class_label):
 
 
 def GetBestInfoGain(examples, target, attributes):
-    print(examples)
     attribute_entropys = {}
     total = len(examples[:, target])
     entropy = GetEntropy(examples, target)
@@ -98,8 +99,8 @@ def GetBestInfoGain(examples, target, attributes):
         a = GetEntropy(binOne, 2)
         b = GetEntropy(binTwo, 2)
         c = GetEntropy(binThree, 2)
-        #attribute_entropys = np.append(attribute_entropys, np.array([[attribute, entropy - ((a * len(binOne)/total) + (b * len(binTwo)/total) + (c * len(binThree)/total))]]), 0)
-        attribute_entropys[attribute] = entropy - ((a * len(binOne)/total) + (b * len(binTwo)/total) + (c * len(binThree)/total))
+        attribute_entropys[attribute] = entropy - (
+                (a * len(binOne) / total) + (b * len(binTwo) / total) + (c * len(binThree) / total))
     return max(attribute_entropys, key=attribute_entropys.get)
 
 
@@ -119,45 +120,76 @@ def AllPositive(examples, label):
 
 def MostCommonValue(examples, label):
     total = 0
-    for i in examples[:, 2]:
+    count = 0
+    for i in examples[:, label]:
         total += i
-    if total >= .5:
+        count += 1
+    average = total / count
+    if average >= .5:
         return 1
     return 0
 
 
-def Id3(data, label, attributes):
-    distance = 0
+def splitByValue(data, feature, value):
+    group = np.zeros((0, 3), float)
+    index = 0
+    for i in data[:, feature]:
+        if i == value:
+            group = np.append(group, np.array([data[index, :]]), 0)
+        index += 1
+    return group
+
+
+def ID3(data, label, attributes, distance):
+    if distance > 3:
+        return Node(None, MostCommonValue(data, label), label, None, data)
     if AllNegative(data, label):
-        return Node(data, 0, None)
+        return Node(None, 0, label, None, data)
     if AllPositive(data, label):
-        return Node(data, 1, None)
+        return Node(None, 1, label, None, data)
     if len(attributes) == 0:
-        return Node(data, MostCommonValue(), None)
+        return Node(None, MostCommonValue(data, label), label, None, data)
     A = GetBestInfoGain(data, label, attributes)
-    # set current feature to A
-    root = Node(dataNode(attributes, A, data), label, distance)
+    children = []
+    newAttributes = attributes
+    newAttributes.remove(A)
     for x in range(3):
-        childData = root.data.getExamplesWithValue(A, x)
-        if len(childData) == 0:
-            targetValue = MostCommonValue(childData, label)
-            return Node(data, targetValue, None)
+        split = splitByValue(data, A, x)
+        if len(split) == 0:
+            children = np.append(children, [Node(None, MostCommonValue(data, label), label, None, split)])
+            children[-1].setFeature(A, x)
+        else:
+            children = np.append(children, [ID3(split, label, newAttributes, distance + 1)])
+            children[-1].setFeature(A, x)
+    return Node(None, None, label, children, data)
 
-    # For every choice in the attribute
-    # If choice == empty then add a child leaf with label = most common target value
-    # Else, Recursion with data having the current feature and choice added to dataNode and attribute(A) removed
 
-
-with open('Example.csv', 'r', encoding='utf-8-sig') as f:
+with open('data/synthetic-4.csv', 'r', encoding='utf-8-sig') as f:
     rawData = np.genfromtxt(f, dtype=float, delimiter=',')
-#print(rawData.shape)
-#print(rawData)
-target_ = 2
-entropy_ = GetEntropy(rawData, target_)
-#print(entropy_)
-attributes_ = [0, 1]
-IG = GetBestInfoGain(rawData, target_, attributes_)
-#print(IG)
-#print(AllPositive(rawData, 4))
-print(Id3(rawData, target_, attributes_))
 
+# MAIN
+# This ID3 algorithm is built to work on any data set with a boolean target attribute
+
+BINS = np.array([0, 1, 2])
+
+if np.amin(rawData, axis=0)[0] < np.amin(rawData, axis=0)[1]:
+    bottom = np.amin(rawData, axis=0)[0] - .01
+else:
+    bottom = np.amin(rawData, axis=0)[1] - .01
+
+if np.amax(rawData, axis=0)[0] > np.amax(rawData, axis=0)[1]:
+    top = np.amax(rawData, axis=0)[0] + .01
+else:
+    top = np.amax(rawData, axis=0)[1] + .01
+
+bins = np.linspace(bottom, top, 3)
+
+binIndexOne = np.digitize(rawData[:, 0], bins)  # Descretize attribute 1 to bins
+binIndexTwo = np.digitize(rawData[:, 1], bins)  # Descretize attribute 2 to bins
+
+cleanData = np.array(
+    [binIndexOne, binIndexTwo, rawData[:, 2]]).transpose()  # Creates a 2D array with the attributes seperated by bins
+
+
+tree = ID3(cleanData, 2, [0, 1], 0)
+print(tree.print_tree(0))
